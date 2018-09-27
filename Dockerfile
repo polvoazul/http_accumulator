@@ -1,2 +1,7 @@
 FROM golang:alpine
-RUN go build middleware.go
+COPY accumulator.go accumulator.go
+RUN go build -o /accumulator accumulator.go
+
+FROM alpine:latest
+COPY --from=0 /accumulator .
+CMD ["./accumulator"]
