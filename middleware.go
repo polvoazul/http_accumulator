@@ -6,9 +6,11 @@ import (
     "strconv"
     "io/ioutil"
     "mime"
+    "net/url"
     "log"
     "net/http"
     "net/http/httptest"
+    "net/http/httputil"
     "mime/multipart"
     "bytes"
 
@@ -20,6 +22,7 @@ func init() {
 
 
 type request_w_handle struct {r *http.Request; handle chan []byte}
+
 func enable_accumulation(next http.HandlerFunc) http.HandlerFunc {
     var main_chan = make(chan request_w_handle)
     go accumulator(main_chan, next)
@@ -32,8 +35,8 @@ func enable_accumulation(next http.HandlerFunc) http.HandlerFunc {
     }
 }
 
-const BATCH int = 3
-const TIMEOUT = 3
+const BATCH int = 5
+const TIMEOUT = 5
 func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
     for {
         request_body := new(bytes.Buffer)
@@ -55,13 +58,15 @@ func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
         if (batch_size == 0) {continue}
         response := make_request(request_body, writer.Boundary(), next)
         _, params, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
-        if (err != nil) {panic("FUCK")};
+        if (err != nil) {panic("DAMN!")};
         var reader = multipart.NewReader(response.Body, params["boundary"])
         for i:= 0; i< batch_size; i++ {
             var part, err = reader.NextPart()
             if(err == nil) {
                 var part_content, _ = ioutil.ReadAll(part)
                 handles[i] <- part_content
+            } else {
+                handles[i] <- []byte(err.Error())
             }
         }
     }
@@ -71,11 +76,12 @@ func make_request(request_body io.Reader, boundary string, next http.HandlerFunc
     var response = httptest.NewRecorder()
     var request = httptest.NewRequest("POST", "/", request_body)
     request.Header.Set("Content-Type", "multipart/mixed; boundary=" + boundary)
+    log.Println("Sending request")
     next.ServeHTTP(response, request)
     return response
 }
 
-func home(w http.ResponseWriter, r *http.Request) {
+func internal(w http.ResponseWriter, r *http.Request) {
     writer := multipart.NewWriter(w)
     var reader, _ = r.MultipartReader()
     for part, err := reader.NextPart(); err == nil; part, err = reader.NextPart() {
@@ -86,7 +92,13 @@ func home(w http.ResponseWriter, r *http.Request) {
     // fmt.Fprintf(w, "welcome " + r.RequestURI + string(body))
 }
 
+func decorator_main_() {
+    http.Handle("/", enable_accumulation(internal))
+    log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
 func main() {
-    http.Handle("/", enable_accumulation(home))
+    url, _ := url.Parse("http://localhost:1234")
+    http.Handle("/", enable_accumulation(httputil.NewSingleHostReverseProxy(url).ServeHTTP))
     log.Fatal(http.ListenAndServe(":8080", nil))
 }
