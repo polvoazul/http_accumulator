@@ -3,12 +3,14 @@ services:
   accumulator:
     build: .
     ports:
-    - "9992:80"
+    - "9992:9992"
+    environment:
+      SERVICE_URL: "doubler:9991"
   doubler:
     image: jazzdd/alpine-flask
     ports:
     - "9991:9991"
     volumes:
     - ${PWD}/doubler.py:/app/app.py
-    - ${PWD}/double_requirements.txt:/app/requirements.txt
+    - ${PWD}/doubler_requirements.txt:/app/requirements.txt
     command: -d # for debug mode

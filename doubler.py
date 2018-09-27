@@ -6,8 +6,8 @@ app = flask.Flask('')
 
 @app.route('/', methods=['POST'])
 def echo():
-    time.sleep(2) # this is a very hard computation
-    doubled = {k: str(int(v) * 2) for k, v in flask.request.form.items()}
+    time.sleep(1) # this is a very hard computation
+    doubled = {k: str(int(v) * 2) if v else str(int(k) * 2) for k, v in flask.request.form.items()}
     m = MultipartEncoder(fields=doubled)
     return flask.Response(content_type=m.content_type, response=m.to_string())
 

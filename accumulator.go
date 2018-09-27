@@ -3,6 +3,7 @@ package main
 import (
     "time"
     "io"
+    "os"
     "strconv"
     "io/ioutil"
     "mime"
@@ -35,8 +36,8 @@ func enable_accumulation(next http.HandlerFunc) http.HandlerFunc {
     }
 }
 
-const BATCH int = 5
-const TIMEOUT = 5
+const BATCH int = 3
+const TIMEOUT = 3
 func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
     for {
         request_body := new(bytes.Buffer)
@@ -48,7 +49,8 @@ func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
             select {
                 case request_w_handle := <- main_chan:
                     log.Println("RECEIVED" + request_w_handle.r.RequestURI)
-                    writer.WriteField(strconv.Itoa(i), request_w_handle.r.RequestURI)
+                    field, _ := ioutil.ReadAll(request_w_handle.r.Body)
+                    writer.WriteField(strconv.Itoa(i), string(field))
                     handles[i] = request_w_handle.handle
                     break
                 case <- timeout: log.Println("timeout"); break buffering
@@ -56,6 +58,7 @@ func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
         }
         batch_size := i
         if (batch_size == 0) {continue}
+        writer.Close()
         response := make_request(request_body, writer.Boundary(), next)
         _, params, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
         if (err != nil) {panic("DAMN!")};
@@ -75,7 +78,7 @@ func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
 func make_request(request_body io.Reader, boundary string, next http.HandlerFunc) *httptest.ResponseRecorder {
     var response = httptest.NewRecorder()
     var request = httptest.NewRequest("POST", "/", request_body)
-    request.Header.Set("Content-Type", "multipart/mixed; boundary=" + boundary)
+    request.Header.Set("Content-Type", "multipart/form-data; boundary=" + boundary)
     log.Println("Sending request")
     next.ServeHTTP(response, request)
     return response
@@ -98,7 +101,7 @@ func decorator_main_() {
 }
 
 func main() {
-    url, _ := url.Parse("http://localhost:1234")
+    url, _ := url.Parse("http://" + os.Getenv("SERVICE_URL"))
     http.Handle("/", enable_accumulation(httputil.NewSingleHostReverseProxy(url).ServeHTTP))
-    log.Fatal(http.ListenAndServe(":8080", nil))
+    log.Fatal(http.ListenAndServe(":9992", nil))
 }
