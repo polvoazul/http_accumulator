@@ -2,6 +2,7 @@ package main
 
 import (
     "time"
+    "io"
     "strconv"
     "io/ioutil"
     "mime"
@@ -35,7 +36,6 @@ const BATCH int = 3
 const TIMEOUT = 3
 func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
     for {
-        var response = httptest.NewRecorder()
         request_body := new(bytes.Buffer)
         writer := multipart.NewWriter(request_body)
         var handles [BATCH]chan []byte
@@ -53,9 +53,7 @@ func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
         }
         batch_size := i
         if (batch_size == 0) {continue}
-        var request = httptest.NewRequest("POST", "/", request_body)
-        request.Header.Set("Content-Type", "multipart/mixed; boundary=" + writer.Boundary())
-        next.ServeHTTP(response, request)
+        response := make_request(request_body, writer.Boundary(), next)
         _, params, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
         if (err != nil) {panic("FUCK")};
         var reader = multipart.NewReader(response.Body, params["boundary"])
@@ -67,6 +65,14 @@ func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
             }
         }
     }
+}
+
+func make_request(request_body io.Reader, boundary string, next http.HandlerFunc) *httptest.ResponseRecorder {
+    var response = httptest.NewRecorder()
+    var request = httptest.NewRequest("POST", "/", request_body)
+    request.Header.Set("Content-Type", "multipart/mixed; boundary=" + boundary)
+    next.ServeHTTP(response, request)
+    return response
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
