@@ -2,6 +2,7 @@ package main
 
 import (
     "time"
+    //"encoding/json"
     "io"
     "os"
     "strconv"
@@ -14,8 +15,18 @@ import (
     "net/http/httputil"
     "mime/multipart"
     "bytes"
-
 )
+
+func decorator_main_() {
+    http.Handle("/", enable_accumulation(internal_handler_function))
+    log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func main() {
+    url, _ := url.Parse("http://" + os.Getenv("SERVICE_URL"))
+    http.Handle("/", enable_accumulation(httputil.NewSingleHostReverseProxy(url).ServeHTTP))
+    log.Fatal(http.ListenAndServe(":9992", nil))
+}
 
 func init() {
     log.SetFlags(log.Lshortfile)
@@ -36,12 +47,51 @@ func enable_accumulation(next http.HandlerFunc) http.HandlerFunc {
     }
 }
 
+type batch_writer interface {
+    WriteField(string, string) error
+    Close() error
+    Boundary() string
+}
+
+type multipart_writer batch_writer
+
+func NewMultipartWriter(buffer io.Writer) multipart_writer {
+    return multipart.NewWriter(buffer)
+}
+
+type json_writer struct {
+    buffer io.Writer
+    first bool;
+}
+
+func NewJsonWriter(buffer io.Writer) *json_writer {
+    r := new(json_writer)
+    r.first = true
+    r.buffer = buffer
+    return r
+}
+
+func (json json_writer) Boundary() string { return "" }
+func (json json_writer) Close() error { return nil}
+func (json json_writer) WriteField(request string, boundary string) error {
+    if(!json.first) {
+        json.buffer.Write([]byte(","))
+    }
+    json.first = false
+    json.buffer.Write([]byte(request))
+    return nil
+}
+
+
+
+
 const BATCH int = 3
 const TIMEOUT = 3
 func accumulator(main_chan chan request_w_handle, next http.HandlerFunc){
     for {
         request_body := new(bytes.Buffer)
-        writer := multipart.NewWriter(request_body)
+        //var writer batch_writer = multipart.NewWriter(request_body)
+        var writer batch_writer = NewJsonWriter(request_body)
         var handles [BATCH]chan []byte
         timeout := time.After(TIMEOUT * time.Second)
         var i int
@@ -84,7 +134,7 @@ func make_request(request_body io.Reader, boundary string, next http.HandlerFunc
     return response
 }
 
-func internal(w http.ResponseWriter, r *http.Request) {
+func internal_handler_function(w http.ResponseWriter, r *http.Request) {
     writer := multipart.NewWriter(w)
     var reader, _ = r.MultipartReader()
     for part, err := reader.NextPart(); err == nil; part, err = reader.NextPart() {
@@ -95,13 +145,3 @@ func internal(w http.ResponseWriter, r *http.Request) {
     // fmt.Fprintf(w, "welcome " + r.RequestURI + string(body))
 }
 
-func decorator_main_() {
-    http.Handle("/", enable_accumulation(internal))
-    log.Fatal(http.ListenAndServe(":8080", nil))
-}
-
-func main() {
-    url, _ := url.Parse("http://" + os.Getenv("SERVICE_URL"))
-    http.Handle("/", enable_accumulation(httputil.NewSingleHostReverseProxy(url).ServeHTTP))
-    log.Fatal(http.ListenAndServe(":9992", nil))
-}
