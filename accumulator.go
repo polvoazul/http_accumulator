@@ -142,21 +142,21 @@ func (self *json_writer) WriteField(index string, request string) error {
         self.buffer.Write([]byte("[\n"))
         self.first = false
     } else {
-        self.buffer.Write([]byte(","))
+        self.buffer.Write([]byte(",\n"))
     }
     log.Println(request)
     self.buffer.Write([]byte(request))
     return nil
 }
 
-const BATCH int = 3
-const TIMEOUT = 3
 func accumulator(main_chan chan request_w_handle, next http.HandlerFunc, batch_writer func(io.Writer) batch_writer){
+    BATCH, _ := strconv.Atoi(os.Getenv("BATCH_SIZE")) // change to config
+    TIMEOUT, _ := strconv.ParseFloat(os.Getenv("TIMEOUT"), 32) // change to config
     for {
         request_body := new(bytes.Buffer)
         writer := batch_writer(request_body)
-        var handles [BATCH]chan []byte
-        timeout := time.After(TIMEOUT * time.Second)
+        handles := make([]chan[]byte, BATCH)
+        timeout := time.After(int(TIMEOUT) * time.Second) // remove INT
         var i int
         buffering: for i = 0; i < BATCH; i++ {
             select {
